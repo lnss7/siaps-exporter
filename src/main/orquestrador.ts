@@ -6,7 +6,7 @@
  *   1. Abre Chrome VISÍVEL pra login inicial.
  *   2. Quando login confirmado, MINIMIZA a janela (via CDP) — segue trabalhando em background.
  *   3. Mid-execution: se um job lança SessaoSiapsExpirada, RESTAURA a janela,
- *      a gestora refaz o caminho até a URL certa, app detecta retorno e minimiza de novo.
+ *      o usuário refaz o caminho até a URL certa, app detecta retorno e minimiza de novo.
  *
  * Para cada (ref × mês):
  *   1. Scraper baixa CSV (Playwright)
@@ -28,7 +28,7 @@ import { mensagemAmigavel } from '../shared/erros';
 const CONFIG_PATH = path.join(__dirname, '../../config/refs.json');
 
 // Flag de cancelamento. Setada por solicitarCancelamento() (chamada do IPC
-// quando a gestora clica em "Voltar" durante a execução).
+// quando o usuário clica em "Voltar" durante a execução).
 let cancelamentoSolicitado = false;
 let handleAtivo: BrowserHandle | null = null;
 
@@ -73,9 +73,9 @@ function carregarRefs(refIds: number[]): RefComSetor[] {
 }
 
 /**
- * Restaura a janela, pede pra gestora refazer o caminho até `urlAlvo`,
- * e minimiza de novo quando confirmar. Usado tanto no login inicial
- * quanto quando a sessão expira no meio da execução.
+ * Restaura a janela, pede pro usuário refazer o caminho até `urlAlvo`, e
+ * minimiza de novo quando confirmar. Usado tanto no login inicial quanto
+ * quando a sessão expira no meio da execução.
  */
 async function pedirLoginEMinimizar(
   handle: BrowserHandle,
@@ -87,7 +87,7 @@ async function pedirLoginEMinimizar(
     mainWindow.webContents.send('scrape:aguardando-login', { motivo });
   }
 
-  console.log(`[orq] 🪟 Pedindo login da gestora (${motivo})...`);
+  console.log(`[orq] 🪟 Pedindo login do usuário (${motivo})...`);
   await restaurarJanela(handle);
   await garantirLogin(handle.page, urlAlvo);
 
@@ -243,8 +243,8 @@ export async function executarExportacao(
     `[orq] 🏁 ${((Date.now() - inicio) / 1000).toFixed(1)}s — ${sucesso} ok, ${erros} erro(s)`,
   );
 
-  // Notificação nativa do sistema — a gestora costuma sair pra fazer outra
-  // coisa enquanto o app roda. O ding/toast avisa que pode voltar.
+  // Notificação nativa do sistema — execuções longas, ding/toast avisa que
+  // o trabalho terminou.
   if (Notification.isSupported()) {
     const titulo =
       erros === 0

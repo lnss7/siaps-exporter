@@ -4,7 +4,7 @@
  *
  * Tem TTL de 24h: depois disso a função `isStale()` retorna true, sinalizando
  * pro orquestrador rodar uma re-descoberta oportunista usando a sessão já
- * logada (sem custo extra de login pra gestora).
+ * logada (sem custo extra de login).
  */
 import { app } from 'electron';
 import * as path from 'path';

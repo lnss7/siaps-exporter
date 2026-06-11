@@ -168,8 +168,8 @@ async function selecionarMes(page: Page, mes: Mes, anoAtivo: number): Promise<nu
  * Aceita seletor string OU Locator (pros casos onde já temos um locator
  * resolvido, tipo `page.locator(...).nth(N)`).
  *
- * Filosofia: SIAPS tem dias muito lentos. PREFERIMOS ESPERAR A ERRAR. A gestora
- * deixa rodando enquanto faz outras coisas — demorar 30min é OK, dar erro não.
+ * Filosofia: SIAPS tem dias muito lentos. Preferimos esperar a errar —
+ * demorar é tolerável, dar erro não.
  *
  * Estratégia em 3 níveis:
  *   1. Espera blockUI sumir (estável) e tenta click normal — 60s pra completar
@@ -229,8 +229,8 @@ async function clickRobusto(
  * SIAPS faz vários ciclos curtos de loading e nosso wait pegava um buraco entre
  * eles. Quando tentávamos clicar, o overlay voltava bem no meio da ação.
  *
- * Defaults BEM generosos — SIAPS tem dias horríveis. A gestora prefere o app
- * demorar 30min do que receber erro. Só cuspimos erro depois de 5min preso.
+ * Defaults BEM generosos — SIAPS tem dias horríveis. Só cuspimos erro depois
+ * de 5min preso, preferindo esperar a falhar prematuramente.
  */
 async function esperarLoadingSumir(
   page: Page,

@@ -106,7 +106,7 @@ function tamanhoDir(dir: string): number {
  *
  * 2. Flag de crash no Preferences — se exit_type for "Crashed", o Chrome
  *    mostra a barrinha "O Chrome não foi encerrado corretamente. Restaurar?"
- *    A gestora não deve ver isso. Forçamos exit_type=Normal antes de abrir.
+ *    Forçamos exit_type=Normal antes de abrir pra suprimir esse popup.
  */
 function limparResiduosDePerfil(): void {
   if (!fs.existsSync(USER_DATA_DIR)) return;
@@ -155,8 +155,7 @@ export async function abrirBrowser(): Promise<BrowserHandle> {
   });
 
   // Auto-aceita beforeunload/confirm/alert. Sem isso, Playwright dispensa
-  // os dialogs por padrão e bloqueia a navegação — foi o que prendia a
-  // gestora na página de 404 do SIAPS.
+  // os dialogs por padrão e bloqueia a navegação na página de 404 do SIAPS.
   context.on('page', (p) => {
     p.on('dialog', (d) => d.accept().catch(() => {}));
   });
@@ -199,7 +198,7 @@ export async function minimizarJanela(handle: BrowserHandle): Promise<void> {
 
 /**
  * Restaura a janela do Chrome (traz pra frente).
- * Usado quando precisa de intervenção da gestora (ex.: login expirou).
+ * Usado quando precisa de intervenção humana (ex.: login expirou).
  */
 export async function restaurarJanela(handle: BrowserHandle): Promise<void> {
   try {

@@ -10,7 +10,7 @@
 
 appId: br.gov.saude.siapsExporter
 productName: SIAPS Exporter
-copyright: Copyright © 2026 Gestora de Saúde
+copyright: Copyright © 2026 Lucas Simão
 
 directories:
   output: release

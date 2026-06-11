@@ -1,6 +1,6 @@
 /**
  * ERROS — traduz mensagens técnicas (Playwright, googleapis, rede) em texto
- * que a gestora consegue entender, sem stack trace ou nomes de selectors.
+ * que o usuário consegue entender, sem stack trace ou nomes de selectors.
  *
  * Usado no orquestrador antes de gravar `job.erro` (que vai pra UI) e em
  * qualquer outro lugar onde mostramos erro pra o humano.

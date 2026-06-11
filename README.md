@@ -4,7 +4,7 @@ App desktop Windows que baixa automaticamente planilhas de indicadores do **SIAP
 
 ## 🎯 Pra quem é
 
-Gestoras de saúde pública que hoje baixam dezenas de planilhas manualmente todo mês.
+Profissionais que precisam baixar dezenas de planilhas de indicadores do SIAPS todo mês e levar pro Google Sheets.
 
 ## ⚡ Como funciona
 
@@ -63,7 +63,7 @@ O instalador sai em `release/SIAPS Exporter Setup X.Y.Z.exe`.
    ```
 3. **GitHub Actions com runner Windows** (CI): configurar workflow que builda em PR/tag.
 
-### Requisitos na máquina da gestora
+### Requisitos na máquina do usuário
 - Windows 10 ou 11
 - Google Chrome instalado (o app usa o Chrome do sistema)
 - Conexão com a internet

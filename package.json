@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Automação de download de planilhas do SIAPS pro Google Sheets",
   "main": "out/main/main.js",
-  "author": "Gestora de Saúde",
+  "author": "Lucas Simao",
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",

@@ -1,9 +1,9 @@
 /**
  * LOGIN — espera o login humano no SIAPS.
  *
- * Estratégia: abre o portal de login do gov (NÃO a URL do indicador) pra
- * evitar mostrar a página 404 do SIAPS quando a sessão expirou. A gestora
- * loga e navega até a tela do indicador; o app só observa a URL.
+ * Estratégia: abre o portal de login (NÃO a URL do indicador) pra evitar
+ * mostrar a página 404 do SIAPS quando a sessão expirou. O usuário loga e
+ * navega até a tela do indicador; o app só observa a URL.
  *
  * Não armazena senha. Depende da sessão persistente no .chrome-profile/.
  */

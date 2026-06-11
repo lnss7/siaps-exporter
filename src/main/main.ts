@@ -16,7 +16,7 @@ import { autoUpdater } from 'electron-updater';
 
 const isDev = !app.isPackaged;
 
-// Bloqueia segunda instância — se a gestora abrir o app duas vezes, a segunda
+// Bloqueia segunda instância — se o app for aberto duas vezes, a segunda
 // fecha sozinha e a primeira foca em vez de criar dois orquestradores brigando
 // pelo mesmo Chrome profile.
 if (!app.requestSingleInstanceLock()) {
@@ -77,8 +77,8 @@ app.whenReady().then(() => {
  *
  * Fluxo:
  *  - App abre → consulta `latest.yml` no GitHub Releases
- *  - Se versão remota > local: baixa em background, sem incomodar a gestora
- *  - Quando ela fechar o app: instala automaticamente; próxima abertura tem a nova versão
+ *  - Se versão remota > local: baixa em background, sem interromper o uso
+ *  - Quando o app for fechado: instala automaticamente; próxima abertura tem a nova versão
  *
  * Erros são logados mas não interrompem o app — atualização é "bom ter", não crítica.
  */
@@ -100,7 +100,7 @@ function inicializarAutoUpdate(): void {
   });
   autoUpdater.on('update-downloaded', (info) => {
     console.log(`[updater] ✅ Versão ${info.version} pronta. Será instalada ao fechar o app.`);
-    // Notifica a gestora discretamente — instalação acontece sozinha no próximo fechamento
+    // Notifica discretamente — instalação acontece sozinha no próximo fechamento
     if (Notification.isSupported() && mainWindow && !mainWindow.isDestroyed()) {
       try {
         new Notification({
