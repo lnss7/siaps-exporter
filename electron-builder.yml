@@ -55,3 +55,4 @@ publish:
   provider: github
   owner: lnss7
   repo: siaps-exporter
+  releaseType: release
