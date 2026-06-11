@@ -53,3 +53,27 @@ nsis:
 
 # Não buildamos pra macOS/Linux por padrão — a gestora é Windows.
 # Se quiser testar local no Mac sem Wine, rode: `npx electron-builder --mac`.
+
+# ---- Auto-update via GitHub Releases ----
+#
+# Como funciona:
+#   1. `npm run dist:publish` builda e sobe binários + arquivo `latest.yml` pro GitHub.
+#   2. Toda vez que o app abre na máquina da Lizandra, ele consulta o `latest.yml`.
+#   3. Se a versão remota for maior que a local, baixa em background.
+#   4. Quando ela fechar e abrir o app de novo, a atualização é aplicada.
+#
+# Pré-requisito pra rodar `dist:publish`:
+#   - Gerar Personal Access Token no GitHub com escopo `repo`
+#   - Exportar como variável de ambiente: `export GH_TOKEN=ghp_xxxxx` (Mac/Linux)
+#     ou `set GH_TOKEN=ghp_xxxxx` (Windows cmd) ou `$env:GH_TOKEN="ghp_xxxxx"` (PowerShell)
+publish:
+  provider: github
+  owner: lnss7
+  repo: siaps-exporter
+  # ⚠️ Token de leitura embeddado pra o app conseguir baixar updates do repo
+  # privado. Use um fine-grained PAT com `Contents: Read only` no repo.
+  # Quando subir uma release (npm run dist:publish), o electron-builder usa
+  # o GH_TOKEN do env (que precisa de Read+Write).
+  # Pra fazer aqui ser um token só de leitura diferente do build-token,
+  # descomente a linha abaixo e cole o token READ-ONLY:
+  # token: github_pat_SEU_TOKEN_READONLY_AQUI

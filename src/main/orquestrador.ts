@@ -6,7 +6,7 @@
  *   1. Abre Chrome VISÍVEL pra login inicial.
  *   2. Quando login confirmado, MINIMIZA a janela (via CDP) — segue trabalhando em background.
  *   3. Mid-execution: se um job lança SessaoSiapsExpirada, RESTAURA a janela,
- *      Lizandra refaz o caminho até a URL certa, app detecta retorno e minimiza de novo.
+ *      a gestora refaz o caminho até a URL certa, app detecta retorno e minimiza de novo.
  *
  * Para cada (ref × mês):
  *   1. Scraper baixa CSV (Playwright)

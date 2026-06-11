@@ -11,6 +11,8 @@ downloads/
 config/google-credential.json
 config/google-credentials.json
 config/google-token.enc
+config/google-token.bin
+.chrome-profile/
 
 # Sistema
 .DS_Store

@@ -12,6 +12,7 @@ import { abrirBrowser, minimizarJanela, restaurarJanela } from '../scraper/brows
 import { garantirLogin } from '../scraper/login';
 import { descobrirMeses } from '../scraper/descobrirMeses';
 import { lerCacheMeses, salvarCacheMeses } from './cacheMeses';
+import { autoUpdater } from 'electron-updater';
 
 const isDev = !app.isPackaged;
 
@@ -62,11 +63,65 @@ function createWindow() {
 app.whenReady().then(() => {
   registrarHandlers();
   createWindow();
+  if (!isDev) inicializarAutoUpdate();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+/**
+ * Configura o auto-update via GitHub Releases.
+ * Roda só em produção (app empacotado). Em dev, electron-updater não funciona
+ * porque não há `app-update.yml` gerado pelo builder.
+ *
+ * Fluxo:
+ *  - App abre → consulta `latest.yml` no GitHub Releases
+ *  - Se versão remota > local: baixa em background, sem incomodar a gestora
+ *  - Quando ela fechar o app: instala automaticamente; próxima abertura tem a nova versão
+ *
+ * Erros são logados mas não interrompem o app — atualização é "bom ter", não crítica.
+ */
+function inicializarAutoUpdate(): void {
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('checking-for-update', () => {
+    console.log('[updater] 🔍 Procurando atualização...');
+  });
+  autoUpdater.on('update-available', (info) => {
+    console.log(`[updater] ⬇️  Nova versão ${info.version} disponível, baixando...`);
+  });
+  autoUpdater.on('update-not-available', () => {
+    console.log('[updater] ✅ Já está na versão mais recente.');
+  });
+  autoUpdater.on('download-progress', (p) => {
+    console.log(`[updater] 📦 ${p.percent.toFixed(0)}% baixado (${(p.bytesPerSecond / 1024).toFixed(0)} KB/s)`);
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log(`[updater] ✅ Versão ${info.version} pronta. Será instalada ao fechar o app.`);
+    // Notifica a gestora discretamente — instalação acontece sozinha no próximo fechamento
+    if (Notification.isSupported() && mainWindow && !mainWindow.isDestroyed()) {
+      try {
+        new Notification({
+          title: '✨ Atualização disponível',
+          body: `Versão ${info.version} foi baixada. Será aplicada quando você fechar o app.`,
+          silent: true,
+        }).show();
+      } catch {
+        /* silent */
+      }
+    }
+  });
+  autoUpdater.on('error', (err) => {
+    console.warn('[updater] ⚠️  Falha ao verificar atualização (não crítico):', err.message);
+  });
+
+  // Dispara a primeira verificação. Não bloqueia o boot do app.
+  autoUpdater.checkForUpdates().catch((err) => {
+    console.warn('[updater] ⚠️  Verificação inicial falhou:', err.message);
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
