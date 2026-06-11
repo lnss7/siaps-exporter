@@ -99,15 +99,7 @@ export function limparCsv(caminhoArquivo: string): ResultadoLimpeza {
   };
 }
 
-// Modo CLI pra testar
-if (require.main === module) {
-  const caminho = process.argv[2];
-  if (!caminho) {
-    console.error('Uso: tsx src/processor/cleanCsv.ts <caminho-do-csv>');
-    process.exit(1);
-  }
-  const resultado = limparCsv(caminho);
-  const saida = caminho.replace(/\.csv$/, '_limpo.csv');
-  fs.writeFileSync(saida, resultado.csv);
-  console.log(`[processor] ✅ Salvo em: ${saida}`);
-}
+// Nota: o bloco `if (require.main === module)` que existia aqui foi removido
+// porque o Vite bundla esse arquivo dentro do main.js do Electron, fazendo o
+// check ficar sempre true e sequestrar a execução do app. O CLI de teste vive
+// em `src/processor/test.ts` (rodado via `npm run test:processor`).
