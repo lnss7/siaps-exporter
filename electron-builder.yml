@@ -1,0 +1,55 @@
+# SIAPS Exporter — build pro Windows (NSIS installer).
+#
+# Como buildar:
+#   npm run dist           # gera o instalador em ./release/
+#
+# Pré-requisitos:
+#   - Buildar NUMA máquina Windows (ideal), OU
+#   - No macOS/Linux com Wine instalado: `brew install --cask wine-stable`
+#     (cross-compile funciona mas é mais lento e pode ter quirks)
+
+appId: br.gov.saude.siapsExporter
+productName: SIAPS Exporter
+copyright: Copyright © 2026 Gestora de Saúde
+
+directories:
+  output: release
+  buildResources: build
+
+# Arquivos que vão pra dentro do app.asar.
+# `out/**` é o resultado do electron-vite build (main + preload + renderer).
+# `config/**` precisa estar lá pra os JSONs serem lidos em runtime.
+# `package.json` é necessário pro Electron resolver o `main` entry.
+files:
+  - out/**
+  - config/**
+  - package.json
+
+# Por padrão tudo vai pra asar. `config/` fica DENTRO do asar — funciona porque
+# o Electron intercepta fs.readFileSync pra ler de dentro do asar transparente.
+
+asar: true
+
+# ---- Configuração Windows ----
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # Sem ícone custom: usa o padrão do Electron. Se quiser logo,
+  # adicione build/icon.ico (256x256 mínimo) e descomente:
+  # icon: build/icon.ico
+
+# Instalador NSIS — UI tradicional de Windows "Next > Next > Install".
+nsis:
+  oneClick: false                 # Mostra wizard em vez de instalar silencioso
+  perMachine: false               # Instala só pro usuário atual (não pede admin)
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: SIAPS Exporter
+  # uninstallDisplayName: "SIAPS Exporter"
+  # license: build/license.txt    # opcional
+
+# Não buildamos pra macOS/Linux por padrão — a gestora é Windows.
+# Se quiser testar local no Mac sem Wine, rode: `npx electron-builder --mac`.

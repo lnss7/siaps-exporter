@@ -1,0 +1,81 @@
+{
+  "setores": {
+    "esf_eap": {
+      "nome": "eSF e eAP",
+      "base_url": "https://siaps.saude.gov.br/componentes/qualidade/APS",
+      "referencias": [
+        { "id": 110, "nome": "Mais Acesso", "url": "https://siaps.saude.gov.br/componentes/qualidade/APS/110" },
+        { "id": 108, "nome": "Desenvolvimento Infantil", "url": "https://siaps.saude.gov.br/componentes/qualidade/APS/108" },
+        { "id": 107, "nome": "Gestação e Puerpério", "url": "https://siaps.saude.gov.br/componentes/qualidade/APS/107" },
+        { "id": 105, "nome": "Diabetes", "url": "https://siaps.saude.gov.br/componentes/qualidade/APS/105" },
+        { "id": 104, "nome": "Hipertensão", "url": "https://siaps.saude.gov.br/componentes/qualidade/APS/104" },
+        { "id": 106, "nome": "Pessoa Idosa", "url": "https://siaps.saude.gov.br/componentes/qualidade/APS/106" },
+        { "id": 109, "nome": "Prevenção do Câncer", "url": "https://siaps.saude.gov.br/componentes/qualidade/APS/109" }
+      ]
+    },
+    "esb": {
+      "nome": "eSB",
+      "base_url": "https://siaps.saude.gov.br/componentes/qualidade/BUCAL",
+      "referencias": [
+        { "id": 111, "nome": "1ª Consulta Odontológica", "url": "https://siaps.saude.gov.br/componentes/qualidade/BUCAL/111" },
+        { "id": 112, "nome": "Tratamento Odontológico Concluído", "url": "https://siaps.saude.gov.br/componentes/qualidade/BUCAL/112" },
+        { "id": 113, "nome": "Taxa de Exodontias", "url": "https://siaps.saude.gov.br/componentes/qualidade/BUCAL/113" },
+        { "id": 114, "nome": "Escovação Supervisionada", "url": "https://siaps.saude.gov.br/componentes/qualidade/BUCAL/114" },
+        { "id": 115, "nome": "Procedimentos Odontológicos Preventivos", "url": "https://siaps.saude.gov.br/componentes/qualidade/BUCAL/115" },
+        { "id": 116, "nome": "Tratamento Restaurador Atraumático", "url": "https://siaps.saude.gov.br/componentes/qualidade/BUCAL/116" }
+      ]
+    },
+    "emulti": {
+      "nome": "eMulti",
+      "base_url": "https://siaps.saude.gov.br/componentes/qualidade/EMULT",
+      "referencias": [
+        { "id": 117, "nome": "Média de Atendimentos da eMulti por Pessoa", "url": "https://siaps.saude.gov.br/componentes/qualidade/EMULT/117" },
+        { "id": 118, "nome": "Ações Interprofissionais da eMulti na APS", "url": "https://siaps.saude.gov.br/componentes/qualidade/EMULT/118" }
+      ]
+    },
+    "ecr": {
+      "nome": "eCR",
+      "base_url": "https://siaps.saude.gov.br/componentes/qualidade/ECR",
+      "referencias": [
+        { "id": 121, "nome": "Mais Acesso", "url": "https://siaps.saude.gov.br/componentes/qualidade/ECR/121" },
+        { "id": 122, "nome": "Gestação", "url": "https://siaps.saude.gov.br/componentes/qualidade/ECR/122" },
+        { "id": 123, "nome": "IST (HIV/Sífilis/Hepatites B e C)", "url": "https://siaps.saude.gov.br/componentes/qualidade/ECR/123" },
+        { "id": 124, "nome": "Tuberculose", "url": "https://siaps.saude.gov.br/componentes/qualidade/ECR/124" }
+      ]
+    },
+    "eapp": {
+      "nome": "eAPP",
+      "base_url": "https://siaps.saude.gov.br/componentes/qualidade/eAPP",
+      "referencias": [
+        { "id": 125, "nome": "Mais Acesso", "url": "https://siaps.saude.gov.br/componentes/qualidade/eAPP/125" },
+        { "id": 126, "nome": "Gestação", "url": "https://siaps.saude.gov.br/componentes/qualidade/eAPP/126" },
+        { "id": 127, "nome": "Diabetes e/ou Hipertensão", "url": "https://siaps.saude.gov.br/componentes/qualidade/eAPP/127" },
+        { "id": 128, "nome": "IST (HIV/Sífilis/Hepatites B e C)", "url": "https://siaps.saude.gov.br/componentes/qualidade/eAPP/128" },
+        { "id": 129, "nome": "Tuberculose", "url": "https://siaps.saude.gov.br/componentes/qualidade/eAPP/129" },
+        { "id": 130, "nome": "Prevenção do Câncer", "url": "https://siaps.saude.gov.br/componentes/qualidade/eAPP/130" }
+      ]
+    },
+    "esfr": {
+      "nome": "eSFR",
+      "base_url": "https://siaps.saude.gov.br/componentes/qualidade/eSFR",
+      "referencias": [
+        { "id": 131, "nome": "Mais Acesso", "url": "https://siaps.saude.gov.br/componentes/qualidade/eSFR/131" },
+        { "id": 132, "nome": "Desenvolvimento Infantil", "url": "https://siaps.saude.gov.br/componentes/qualidade/eSFR/132" },
+        { "id": 133, "nome": "Cuidado na Gestação de Puerpério", "url": "https://siaps.saude.gov.br/componentes/qualidade/eSFR/133" },
+        { "id": 134, "nome": "Diabetes", "url": "https://siaps.saude.gov.br/componentes/qualidade/eSFR/134" },
+        { "id": 135, "nome": "Hipertensão", "url": "https://siaps.saude.gov.br/componentes/qualidade/eSFR/135" },
+        { "id": 136, "nome": "Prevenção do Câncer", "url": "https://siaps.saude.gov.br/componentes/qualidade/eSFR/136" }
+      ]
+    }
+  },
+  "processamento": {
+    "colunas_para_remover": [
+      "TIPO DO ESTABELECIMENTO",
+      "SIGLA DA EQUIPE"
+    ]
+  },
+  "login": {
+    "url_login": "https://siaps.saude.gov.br/",
+    "url_pos_login_esperada_contem": "siaps.saude.gov.br"
+  }
+}

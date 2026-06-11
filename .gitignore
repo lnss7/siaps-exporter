@@ -1,0 +1,21 @@
+node_modules/
+dist/
+dist-electron/
+out/
+release/
+downloads/
+*.log
+.claude/
+
+# Credenciais e tokens OAuth (nunca commitar)
+config/google-credential.json
+config/google-credentials.json
+config/google-token.enc
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
