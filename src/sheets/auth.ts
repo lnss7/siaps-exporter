@@ -31,14 +31,34 @@ import type { OAuth2Client } from 'google-auth-library';
 let electronApp: any = null;
 let electronSafeStorage: any = null;
 let electronShell: any = null;
+let electronNet: any = null;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const e = require('electron');
   electronApp = e.app ?? null;
   electronSafeStorage = e.safeStorage ?? null;
   electronShell = e.shell ?? null;
+  electronNet = e.net ?? null;
 } catch {
   /* fora do Electron */
+}
+
+/**
+ * Fetch que respeita o proxy do sistema operacional.
+ *
+ * No Electron usa `net.fetch`, que passa pela stack de rede do Chromium e
+ * detecta automaticamente PAC scripts, configs de proxy do Windows/IT, etc.
+ * Sem isso, o `fetch` global do Node ignora o proxy do sistema e tenta sair
+ * direto pra internet — o que falha em redes corporativas que só permitem
+ * tráfego via proxy autenticado.
+ *
+ * Fora do Electron (tsx), cai pro fetch nativo do Node.
+ */
+async function httpFetch(url: string, init?: any): Promise<Response> {
+  if (electronNet?.fetch) {
+    return await electronNet.fetch(url, init);
+  }
+  return await fetch(url, init);
 }
 
 // Device Flow só suporta um subconjunto de scopes — `spreadsheets` NÃO está
@@ -230,14 +250,26 @@ async function loginInterativoDeviceFlow(
   console.log('[auth] 🔐 Iniciando OAuth Device Flow...');
 
   // 1. Pedir device_code
-  const inicioResp = await fetch(DEVICE_CODE_ENDPOINT, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: clientId,
-      scope: SCOPES.join(' '),
-    }).toString(),
-  });
+  let inicioResp: Response;
+  try {
+    inicioResp = await httpFetch(DEVICE_CODE_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        scope: SCOPES.join(' '),
+      }).toString(),
+    });
+  } catch (err) {
+    // `fetch failed` no Node não diz nada — a causa real vem em err.cause
+    console.error('[auth] ❌ Falha ao chamar /device/code:', err);
+    if ((err as any).cause) console.error('[auth]    Causa:', (err as any).cause);
+    throw new Error(
+      'Não consegui falar com o Google. Sua rede pode estar bloqueando ' +
+        'acesso à internet, ou o proxy da empresa precisa ser configurado. ' +
+        'Verifique se você consegue abrir google.com no navegador.',
+    );
+  }
 
   const inicioRaw = await inicioResp.text();
   let inicioData: any;
@@ -285,16 +317,24 @@ async function loginInterativoDeviceFlow(
   while (Date.now() < deadline) {
     await sleep(intervaloMs);
 
-    const tokenResp = await fetch(TOKEN_ENDPOINT, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        device_code: deviceCode,
-        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
-      }).toString(),
-    });
+    let tokenResp: Response;
+    try {
+      tokenResp = await httpFetch(TOKEN_ENDPOINT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          device_code: deviceCode,
+          grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+        }).toString(),
+      });
+    } catch (err) {
+      // Falha de rede no polling — espera e tenta de novo (não aborta tudo)
+      console.warn('[auth] ⚠️  Falha de rede no polling, tentando de novo:', (err as Error).message);
+      if ((err as any).cause) console.warn('[auth]    Causa:', (err as any).cause);
+      continue;
+    }
 
     const tokenData = await tokenResp.json().catch(() => ({}));
 

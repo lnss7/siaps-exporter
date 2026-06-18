@@ -2,7 +2,7 @@
  * MAIN — processo principal do Electron.
  * Cria a janela e registra os handlers IPC.
  */
-import { app, BrowserWindow, ipcMain, shell, Notification } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, Notification, session } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import type { ScrapeOptions } from '../shared/types';
@@ -60,7 +60,8 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await detectarESetarProxy();
   registrarHandlers();
   createWindow();
   if (!isDev) inicializarAutoUpdate();
@@ -69,6 +70,40 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+/**
+ * Detecta o proxy HTTP do sistema (via stack do Chromium) e seta as env vars
+ * HTTPS_PROXY/HTTP_PROXY. A biblioteca googleapis (gaxios) honra essas vars
+ * automaticamente — sem isso, chamadas a Sheets/Drive API falhariam com
+ * `fetch failed` em PCs corporativos com proxy.
+ *
+ * Roda uma vez no boot. Se a usuária mudar de rede sem reabrir o app, fica
+ * com o proxy antigo — é OK pra esse caso (gestora abre/fecha pra exportar).
+ */
+async function detectarESetarProxy(): Promise<void> {
+  try {
+    const proxy = await session.defaultSession.resolveProxy('https://oauth2.googleapis.com');
+    if (!proxy || proxy === 'DIRECT') {
+      console.log('[proxy] ✅ Conexão direta (sem proxy do sistema)');
+      return;
+    }
+    // Formato típico do Chromium: "PROXY host:port" ou "HTTPS host:port"
+    // Pode vir cadeia separada por ';' — pegamos só a primeira opção.
+    const match = proxy.match(/^(PROXY|HTTPS|HTTP)\s+([^;\s]+)/i);
+    if (!match) {
+      console.warn(`[proxy] ⚠️  Formato desconhecido, ignorando: ${proxy}`);
+      return;
+    }
+    const proxyUrl = `http://${match[2]}`;
+    process.env.HTTPS_PROXY = proxyUrl;
+    process.env.HTTP_PROXY = proxyUrl;
+    process.env.https_proxy = proxyUrl;
+    process.env.http_proxy = proxyUrl;
+    console.log(`[proxy] 🔌 Proxy do sistema detectado: ${proxyUrl}`);
+  } catch (err) {
+    console.warn('[proxy] ⚠️  Falha ao detectar proxy:', (err as Error).message);
+  }
+}
 
 /**
  * Configura o auto-update via GitHub Releases.
