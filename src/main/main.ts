@@ -147,7 +147,13 @@ function registrarHandlers() {
   });
 
   ipcMain.handle('auth:login', async () => {
-    const client = await obterClienteOAuth();
+    // Passa um callback que repassa o device_code pra UI via IPC,
+    // pra ela mostrar o modal "vá em google.com/device e digite XYZ".
+    const client = await obterClienteOAuth((info) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('auth:device-code', info);
+      }
+    });
     const info = await obterInfoUsuario(client);
     return info;
   });

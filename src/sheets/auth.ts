@@ -3,18 +3,17 @@
  *
  * Existem DOIS modos, escolhidos automaticamente:
  *
- *  1) Modo Electron (produção e dev do app):
- *     Abre o consent screen do Google dentro de um BrowserWindow embutido
- *     e intercepta a navegação para `http://127.0.0.1/callback`. Não sobe
- *     servidor local, então NÃO depende de firewall/proxy corporativo
- *     permitir conexões loopback — funciona até em PC de órgão público
- *     com proxy restritivo.
+ *  1) Modo Electron (produção e dev do app) — Device Flow / RFC 8628:
+ *     App pede um par (device_code, user_code) ao Google, mostra o user_code
+ *     pra usuária digitar em google.com/device (em qualquer aparelho), e faz
+ *     polling em oauth2.googleapis.com até a autorização completar.
+ *     Nenhum servidor local, nenhum redirect de browser, só HTTPS standard
+ *     pra googleapis.com — funciona em PC corporativo com firewall pesado.
  *
  *  2) Modo tsx (testes via `npm run test:sheets`):
- *     Sem Electron disponível, cai para o fluxo tradicional: abre o
- *     navegador padrão e sobe um servidor HTTP efêmero em 127.0.0.1
- *     pra receber o callback. Só funciona se o ambiente local permitir
- *     loopback (caso típico do mac de dev).
+ *     Sem Electron disponível, cai pro fluxo loopback tradicional: abre o
+ *     navegador padrão e sobe um servidor HTTP efêmero em 127.0.0.1 pra
+ *     receber o callback. Só funciona em ambiente local permissivo.
  *
  * O refresh token é salvo criptografado via safeStorage do Electron;
  * em modo tsx cai pra texto plano (uso de dev apenas).
@@ -32,32 +31,30 @@ import type { OAuth2Client } from 'google-auth-library';
 let electronApp: any = null;
 let electronSafeStorage: any = null;
 let electronShell: any = null;
-let electronBrowserWindow: any = null;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const e = require('electron');
   electronApp = e.app ?? null;
   electronSafeStorage = e.safeStorage ?? null;
   electronShell = e.shell ?? null;
-  electronBrowserWindow = e.BrowserWindow ?? null;
 } catch {
   /* fora do Electron */
 }
 
+// Device Flow só suporta um subconjunto de scopes — `spreadsheets` NÃO está
+// na lista oficial. Como o app só CRIA planilhas novas (nunca edita arquivos
+// pré-existentes), `drive.file` é suficiente: ele dá permissão completa
+// (incluindo via Sheets API) para qualquer arquivo criado por este app.
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.file',
-  'https://www.googleapis.com/auth/spreadsheets',
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
 ];
 
 const CRED_PATH = path.join(__dirname, '../../config/google-credential.json');
 
-// Loopback IP redirect — aceito pelo Google pra Desktop OAuth clients sem
-// precisar registrar nada no Cloud Console. Como interceptamos a navegação
-// no BrowserWindow antes da requisição HTTP sair, o endereço não precisa
-// estar realmente respondendo.
-const ELECTRON_REDIRECT_URI = 'http://127.0.0.1/callback';
+const DEVICE_CODE_ENDPOINT = 'https://oauth2.googleapis.com/device/code';
+const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 
 interface CredFile {
   installed?: { client_id: string; client_secret: string };
@@ -68,7 +65,7 @@ function lerCredenciais(): { clientId: string; clientSecret: string } {
   if (!fs.existsSync(CRED_PATH)) {
     throw new Error(
       `Arquivo de credenciais não encontrado em ${CRED_PATH}.\n` +
-        '👉 Baixe o JSON de OAuth (Desktop app) do Google Cloud Console e salve nesse caminho.',
+        '👉 Baixe o JSON de OAuth (TVs and Limited Input devices) do Google Cloud Console e salve nesse caminho.',
     );
   }
   const raw = JSON.parse(fs.readFileSync(CRED_PATH, 'utf-8')) as CredFile;
@@ -159,13 +156,29 @@ function apagarTokenSalvo(): void {
 }
 
 /**
+ * Info entregue pra UI quando o Device Flow começa, pra mostrar pra usuária.
+ */
+export interface DeviceCodeInfo {
+  userCode: string;
+  verificationUrl: string;
+  expiraEm: number; // timestamp absoluto em ms
+}
+
+export type CallbackDeviceCode = (info: DeviceCodeInfo) => void;
+
+/**
  * Retorna um OAuth2Client autenticado.
  * Se já tem refresh token salvo: usa direto (silencioso).
  * Se token foi revogado/expirado/corrompido: limpa o arquivo e refaz o fluxo.
- * Se nunca logou: dispara o fluxo interativo (BrowserWindow no Electron, ou
+ * Se nunca logou: dispara o fluxo interativo (Device Flow no Electron, ou
  * navegador padrão + servidor localhost no modo tsx).
+ *
+ * @param onDeviceCode callback chamado quando o Device Flow inicia e tem o
+ *   user_code pra mostrar pra usuária. Só é invocado em modo Electron.
  */
-export async function obterClienteOAuth(): Promise<OAuth2Client> {
+export async function obterClienteOAuth(
+  onDeviceCode?: CallbackDeviceCode,
+): Promise<OAuth2Client> {
   const { clientId, clientSecret } = lerCredenciais();
 
   const tokenJson = carregarToken();
@@ -189,122 +202,152 @@ export async function obterClienteOAuth(): Promise<OAuth2Client> {
     }
   }
 
-  if (electronBrowserWindow) {
-    return await loginInterativoEletron(clientId, clientSecret);
+  // Em Electron usamos Device Flow (funciona com firewall corporativo).
+  // Em tsx caímos no fluxo loopback (rede local permissiva).
+  if (electronApp) {
+    return await loginInterativoDeviceFlow(clientId, clientSecret, onDeviceCode);
   }
   return await loginInterativoLocalhost(clientId, clientSecret);
 }
 
 /**
- * Login OAuth dentro de um BrowserWindow embutido do Electron.
- * Não depende de servidor localhost — intercepta a navegação ao redirect_uri
- * direto pela API do Electron, então funciona mesmo em PC com proxy/firewall
- * corporativo bloqueando conexões loopback.
+ * OAuth 2.0 Device Authorization Grant (RFC 8628).
+ *
+ * Fluxo:
+ *  1. POST /device/code → recebe device_code, user_code, verification_url, interval
+ *  2. Mostra user_code pra usuária via callback
+ *  3. Polling em /token até o Google confirmar a autorização
+ *
+ * Não depende de servidor local, redirect de browser, ou qualquer comunicação
+ * loopback — toda a conversa é HTTPS standard com googleapis.com. Funciona
+ * em PC com firewall corporativo que bloqueia loopback.
  */
-async function loginInterativoEletron(
+async function loginInterativoDeviceFlow(
   clientId: string,
   clientSecret: string,
+  onDeviceCode?: CallbackDeviceCode,
 ): Promise<OAuth2Client> {
-  return new Promise((resolve, reject) => {
-    const client = new google.auth.OAuth2(clientId, clientSecret, ELECTRON_REDIRECT_URI);
-    const authUrl = client.generateAuthUrl({
-      access_type: 'offline',
-      scope: SCOPES,
-      prompt: 'consent', // garante refresh_token mesmo se já consentiu antes
-    });
+  console.log('[auth] 🔐 Iniciando OAuth Device Flow...');
 
-    const authWindow = new electronBrowserWindow({
-      width: 520,
-      height: 720,
-      title: 'Login Google — SIAPS Exporter',
-      autoHideMenuBar: true,
-      webPreferences: {
-        nodeIntegration: false,
-        contextIsolation: true,
-        // Partition isolada — não mistura cookies com o resto do app, e a cada
-        // login interativo começa limpo (evita "logado no Google numa conta
-        // errada" persistindo entre tentativas).
-        partition: 'siaps-google-auth',
-      },
-    });
-
-    let concluido = false;
-
-    const finalizarSucesso = async (code: string) => {
-      if (concluido) return;
-      concluido = true;
-      try {
-        const { tokens } = await client.getToken(code);
-        client.setCredentials(tokens);
-        salvarToken(JSON.stringify(tokens));
-        if (!authWindow.isDestroyed()) authWindow.destroy();
-        console.log('[auth] ✅ Tokens salvos.');
-        resolve(client);
-      } catch (err) {
-        if (!authWindow.isDestroyed()) authWindow.destroy();
-        reject(err);
-      }
-    };
-
-    const finalizarFalha = (err: Error) => {
-      if (concluido) return;
-      concluido = true;
-      if (!authWindow.isDestroyed()) authWindow.destroy();
-      reject(err);
-    };
-
-    const interceptar = (event: { preventDefault: () => void }, url: string): void => {
-      // Só interessa o redirect final pro callback. Tudo que for navegação
-      // interna do Google (escolher conta, consent screen) passa direto.
-      if (!url.startsWith(ELECTRON_REDIRECT_URI)) return;
-
-      event.preventDefault();
-      try {
-        const parsed = new URL(url);
-        const code = parsed.searchParams.get('code');
-        const erro = parsed.searchParams.get('error');
-        if (erro) {
-          finalizarFalha(new Error(`OAuth: ${erro}`));
-          return;
-        }
-        if (!code) {
-          finalizarFalha(new Error('OAuth: callback sem código de autorização'));
-          return;
-        }
-        finalizarSucesso(code);
-      } catch (err) {
-        finalizarFalha(err as Error);
-      }
-    };
-
-    authWindow.webContents.on('will-redirect', interceptar);
-    authWindow.webContents.on('will-navigate', interceptar);
-
-    authWindow.on('closed', () => {
-      if (!concluido) {
-        concluido = true;
-        reject(new Error('Janela de login fechada antes de concluir'));
-      }
-    });
-
-    // Timeout de segurança: 10 minutos pro humano logar
-    const timeoutId = setTimeout(
-      () => finalizarFalha(new Error('Timeout: login OAuth não completado em 10 minutos')),
-      10 * 60 * 1000,
-    );
-    // Limpa o timer quando concluir (sucesso ou falha) pra não vazar handle
-    authWindow.on('closed', () => clearTimeout(timeoutId));
-
-    console.log('[auth] 🌐 Abrindo janela embutida de login Google...');
-    authWindow.loadURL(authUrl);
+  // 1. Pedir device_code
+  const inicioResp = await fetch(DEVICE_CODE_ENDPOINT, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      scope: SCOPES.join(' '),
+    }).toString(),
   });
+
+  const inicioRaw = await inicioResp.text();
+  let inicioData: any;
+  try {
+    inicioData = JSON.parse(inicioRaw);
+  } catch {
+    throw new Error(`Resposta inválida do Google: ${inicioRaw.slice(0, 200)}`);
+  }
+
+  if (!inicioResp.ok) {
+    // Se a credencial não suporta Device Flow, o Google responde com erro claro
+    if (inicioData.error === 'invalid_client' || inicioData.error === 'unauthorized_client') {
+      throw new Error(
+        'CredencialIncompativel: a credencial OAuth precisa ser do tipo ' +
+          '"TVs and Limited Input devices" no Google Cloud Console. ' +
+          'Crie uma nova credencial desse tipo e atualize config/google-credential.json.',
+      );
+    }
+    throw new Error(
+      `Falha ao iniciar Device Flow (${inicioResp.status}): ${inicioData.error_description || inicioData.error || inicioRaw}`,
+    );
+  }
+
+  const deviceCode: string = inicioData.device_code;
+  const userCode: string = inicioData.user_code;
+  // Google retorna `verification_url` (legado) e `verification_uri` (RFC) — aceita ambos
+  const verificationUrl: string =
+    inicioData.verification_url || inicioData.verification_uri || 'https://www.google.com/device';
+  const expiresIn: number = inicioData.expires_in ?? 1800;
+  const initialInterval: number = inicioData.interval ?? 5;
+
+  console.log(`[auth] 🔢 user_code=${userCode} | url=${verificationUrl} | expira em ${expiresIn}s`);
+
+  // Notifica a UI pra mostrar o código
+  onDeviceCode?.({
+    userCode,
+    verificationUrl,
+    expiraEm: Date.now() + expiresIn * 1000,
+  });
+
+  // 2. Polling em /token
+  const deadline = Date.now() + expiresIn * 1000;
+  let intervaloMs = initialInterval * 1000;
+
+  while (Date.now() < deadline) {
+    await sleep(intervaloMs);
+
+    const tokenResp = await fetch(TOKEN_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        device_code: deviceCode,
+        grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      }).toString(),
+    });
+
+    const tokenData = await tokenResp.json().catch(() => ({}));
+
+    if (tokenResp.ok && tokenData.access_token) {
+      const client = new google.auth.OAuth2(clientId, clientSecret);
+      const credentials: any = {
+        access_token: tokenData.access_token,
+        token_type: tokenData.token_type,
+        scope: tokenData.scope,
+        expiry_date: Date.now() + (tokenData.expires_in ?? 3600) * 1000,
+      };
+      // Device Flow só retorna refresh_token se o scope incluir offline access,
+      // que o Google considera padrão pra esse grant. Salva se vier.
+      if (tokenData.refresh_token) credentials.refresh_token = tokenData.refresh_token;
+
+      client.setCredentials(credentials);
+      salvarToken(JSON.stringify(credentials));
+      console.log('[auth] ✅ Tokens salvos.');
+      return client;
+    }
+
+    const erro = tokenData.error;
+    if (erro === 'authorization_pending') {
+      // Usuária ainda não autorizou — continua polling no intervalo atual
+      continue;
+    }
+    if (erro === 'slow_down') {
+      // Google pediu pra reduzir frequência — soma 5s ao intervalo (recomendação RFC)
+      intervaloMs += 5000;
+      continue;
+    }
+    if (erro === 'access_denied') {
+      throw new Error('Você negou o acesso. Tente fazer login de novo.');
+    }
+    if (erro === 'expired_token') {
+      throw new Error('O código expirou antes de ser usado. Tente de novo.');
+    }
+    // Qualquer outro erro: aborta com mensagem do Google
+    throw new Error(tokenData.error_description || erro || 'Falha desconhecida no login');
+  }
+
+  throw new Error('Tempo expirado. Tente fazer login de novo.');
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
  * Login OAuth via navegador padrão + servidor HTTP local (fluxo legado).
  * Usado quando o módulo é importado fora do Electron (tsx, scripts de teste).
  * Não funciona em PC com proxy corporativo bloqueando loopback — por isso o
- * app de produção usa loginInterativoEletron.
+ * app de produção usa Device Flow.
  */
 async function loginInterativoLocalhost(
   clientId: string,

@@ -3,7 +3,7 @@
  * Expõe window.api com os métodos disponíveis no React.
  */
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ScrapeOptions, ProgressEvent, DoneEvent, Mes } from '../shared/types';
+import type { ScrapeOptions, ProgressEvent, DoneEvent, Mes, DeviceCodeEvent } from '../shared/types';
 
 export interface InfoUsuario {
   email: string;
@@ -48,6 +48,14 @@ const api = {
     const listener = (_e: unknown, evt: DoneEvent) => cb(evt);
     ipcRenderer.on('scrape:concluido', listener);
     return () => ipcRenderer.removeListener('scrape:concluido', listener);
+  },
+
+  // Disparado quando o Device Flow precisa que a usuária digite um código
+  // em google.com/device. A UI abre um modal com o código + URL.
+  onDeviceCode: (cb: (evt: DeviceCodeEvent) => void) => {
+    const listener = (_e: unknown, evt: DeviceCodeEvent) => cb(evt);
+    ipcRenderer.on('auth:device-code', listener);
+    return () => ipcRenderer.removeListener('auth:device-code', listener);
   },
 };
 

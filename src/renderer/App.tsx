@@ -7,6 +7,8 @@ import {
   CardContent,
   CircularProgress,
   Container,
+  Dialog,
+  DialogContent,
   Fade,
   Skeleton,
   Stack,
@@ -14,6 +16,7 @@ import {
   StepLabel,
   Stepper,
   Toolbar,
+  Tooltip,
   Typography,
   alpha,
 } from '@mui/material';
@@ -23,6 +26,9 @@ import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import GoogleIcon from '@mui/icons-material/Google';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
+import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
+import PhoneIphoneRoundedIcon from '@mui/icons-material/PhoneIphoneRounded';
 import { RefsSelector } from './components/RefsSelector';
 import { MesesSelector } from './components/MesesSelector';
 import { ActionPanel } from './components/ActionPanel';
@@ -31,7 +37,7 @@ import { ResultView } from './components/ResultView';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { gerarMesesDisponiveis } from '../shared/meses';
 import { mensagemAmigavel } from '../shared/erros';
-import type { DoneEvent, Mes, ProgressEvent, Setor } from '../shared/types';
+import type { DeviceCodeEvent, DoneEvent, Mes, ProgressEvent, Setor } from '../shared/types';
 
 interface InfoUsuario {
   email: string;
@@ -52,6 +58,8 @@ export default function App() {
   const [usuario, setUsuario] = useState<InfoUsuario | null>(null);
   const [logando, setLogando] = useState(false);
   const [erroLogin, setErroLogin] = useState<string | null>(null);
+  const [deviceCode, setDeviceCode] = useState<DeviceCodeEvent | null>(null);
+  const [codigoCopiado, setCodigoCopiado] = useState(false);
   const [modo, setModo] = useState<Modo>('setup');
   const [setores, setSetores] = useState<Setor[]>([]);
   const [refsSelecionadas, setRefsSelecionadas] = useState<Set<number>>(new Set());
@@ -69,6 +77,8 @@ export default function App() {
   const handleLogin = async () => {
     setLogando(true);
     setErroLogin(null);
+    setDeviceCode(null);
+    setCodigoCopiado(false);
     try {
       const info = await window.api.loginGoogle();
       setUsuario(info);
@@ -76,6 +86,18 @@ export default function App() {
       setErroLogin(mensagemAmigavel(err));
     } finally {
       setLogando(false);
+      setDeviceCode(null);
+    }
+  };
+
+  const copiarCodigo = async () => {
+    if (!deviceCode) return;
+    try {
+      await navigator.clipboard.writeText(deviceCode.userCode);
+      setCodigoCopiado(true);
+      setTimeout(() => setCodigoCopiado(false), 2000);
+    } catch {
+      /* clipboard pode estar indisponível em alguns ambientes */
     }
   };
 
@@ -122,10 +144,12 @@ export default function App() {
       else if (evt.fase === 'descobrindo') setFaseDescoberta('descobrindo');
       else if (evt.fase === 'concluido') setFaseDescoberta('idle');
     });
+    const offDevice = window.api.onDeviceCode((evt) => setDeviceCode(evt));
     return () => {
       offProg();
       offDone();
       offMeses();
+      offDevice();
     };
   }, []);
 
@@ -198,8 +222,123 @@ export default function App() {
 
   const passoAtivo = modo === 'setup' ? 0 : modo === 'rodando' ? 1 : 2;
 
+  // Modal mostrado durante o Device Flow do Google: usuária digita o user_code
+  // em google.com/device a partir de qualquer aparelho (celular, outro PC).
+  // Renderizado em ambos returns (login e app logado) — Dialog usa portal.
+  const modalDeviceCode = (
+    <Dialog
+      open={!!deviceCode}
+      maxWidth="xs"
+      fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 4,
+          backgroundColor: (t) => alpha(t.palette.background.paper, 0.98),
+          backgroundImage: 'none',
+        },
+      }}
+    >
+      <DialogContent sx={{ p: 4, textAlign: 'center' }}>
+        <Box
+          sx={{
+            width: 56,
+            height: 56,
+            borderRadius: 3,
+            display: 'grid',
+            placeItems: 'center',
+            mx: 'auto',
+            mb: 2.5,
+            background: (t) =>
+              `linear-gradient(135deg, ${t.palette.primary.main}, ${t.palette.primary.dark})`,
+            color: '#fff',
+          }}
+        >
+          <PhoneIphoneRoundedIcon sx={{ fontSize: 30 }} />
+        </Box>
+        <Typography variant="h5" fontWeight={800} letterSpacing="-0.02em" sx={{ mb: 0.5 }}>
+          Autorize pelo celular
+        </Typography>
+        <Typography color="text.secondary" sx={{ mb: 3, fontSize: 14 }}>
+          Pegue o celular, abra o navegador e siga os 2 passos abaixo.
+        </Typography>
+
+        <Stack spacing={2.5} sx={{ mb: 3 }}>
+          <Box>
+            <Typography
+              variant="caption"
+              sx={{ color: 'text.secondary', display: 'block', mb: 1, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700 }}
+            >
+              1. Acesse no celular
+            </Typography>
+            <Button
+              variant="outlined"
+              endIcon={<OpenInNewRoundedIcon sx={{ fontSize: 16 }} />}
+              onClick={() => deviceCode && window.api.abrirUrl(deviceCode.verificationUrl)}
+              fullWidth
+              sx={{ fontFamily: 'monospace', fontSize: 15, py: 1.2, textTransform: 'none' }}
+            >
+              {deviceCode?.verificationUrl.replace(/^https?:\/\//, '')}
+            </Button>
+          </Box>
+
+          <Box>
+            <Typography
+              variant="caption"
+              sx={{ color: 'text.secondary', display: 'block', mb: 1, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 700 }}
+            >
+              2. Digite este código
+            </Typography>
+            <Tooltip title={codigoCopiado ? 'Copiado!' : 'Copiar código'} placement="top">
+              <Box
+                onClick={copiarCodigo}
+                sx={{
+                  cursor: 'pointer',
+                  py: 2,
+                  borderRadius: 2,
+                  border: (t) => `2px dashed ${alpha(t.palette.primary.main, 0.35)}`,
+                  backgroundColor: (t) => alpha(t.palette.primary.main, 0.06),
+                  fontFamily: 'monospace',
+                  fontSize: 28,
+                  fontWeight: 800,
+                  letterSpacing: 4,
+                  color: 'primary.main',
+                  position: 'relative',
+                  transition: 'all 0.15s',
+                  '&:hover': {
+                    backgroundColor: (t) => alpha(t.palette.primary.main, 0.12),
+                  },
+                }}
+              >
+                {deviceCode?.userCode}
+                <ContentCopyRoundedIcon
+                  sx={{
+                    position: 'absolute',
+                    right: 12,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    fontSize: 18,
+                    color: 'text.secondary',
+                    opacity: 0.6,
+                  }}
+                />
+              </Box>
+            </Tooltip>
+          </Box>
+        </Stack>
+
+        <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="center" sx={{ mt: 2 }}>
+          <CircularProgress size={16} thickness={5} />
+          <Typography variant="caption" color="text.secondary" sx={{ fontSize: 12 }}>
+            Aguardando você autorizar no celular…
+          </Typography>
+        </Stack>
+      </DialogContent>
+    </Dialog>
+  );
+
   if (!usuario) {
     return (
+      <>
       <Box
         sx={{
           height: '100vh',
@@ -265,10 +404,13 @@ export default function App() {
           </CardContent>
         </Card>
       </Box>
+      {modalDeviceCode}
+      </>
     );
   }
 
   return (
+    <>
     <Box
       sx={{
         height: '100vh',
@@ -523,6 +665,8 @@ export default function App() {
         </Fade>
       </Box>
     </Box>
+    {modalDeviceCode}
+    </>
   );
 }
 

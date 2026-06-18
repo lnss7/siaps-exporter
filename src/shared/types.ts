@@ -50,3 +50,13 @@ export interface DoneEvent {
   jobs: Job[];
   duracaoMs: number;
 }
+
+/**
+ * Emitido quando o Device Flow do Google entrega o código pra usuária digitar
+ * em google.com/device. A UI mostra esse código + URL e fica em "aguardando".
+ */
+export interface DeviceCodeEvent {
+  userCode: string;
+  verificationUrl: string;
+  expiraEm: number; // timestamp absoluto em ms
+}
