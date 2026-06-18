@@ -1,15 +1,23 @@
 /**
- * AUTH — fluxo OAuth 2.0 desktop com loopback localhost.
+ * AUTH — fluxo OAuth 2.0 para apps desktop.
  *
- * Como funciona:
- *  1. App abre o navegador padrão na URL do Google de consentimento.
- *  2. Usuária loga com a conta dela e autoriza o app.
- *  3. Google redireciona pra http://127.0.0.1:PORTA/callback?code=XXX
- *  4. Servidor HTTP local (efêmero) captura o code e troca por tokens.
- *  5. Refresh token é salvo criptografado via safeStorage do Electron.
+ * Existem DOIS modos, escolhidos automaticamente:
  *
- * Em modo de teste (tsx fora do Electron), cai pra fs simples (sem cripto)
- * e abre o browser via `open`/`xdg-open`/`start`.
+ *  1) Modo Electron (produção e dev do app):
+ *     Abre o consent screen do Google dentro de um BrowserWindow embutido
+ *     e intercepta a navegação para `http://127.0.0.1/callback`. Não sobe
+ *     servidor local, então NÃO depende de firewall/proxy corporativo
+ *     permitir conexões loopback — funciona até em PC de órgão público
+ *     com proxy restritivo.
+ *
+ *  2) Modo tsx (testes via `npm run test:sheets`):
+ *     Sem Electron disponível, cai para o fluxo tradicional: abre o
+ *     navegador padrão e sobe um servidor HTTP efêmero em 127.0.0.1
+ *     pra receber o callback. Só funciona se o ambiente local permitir
+ *     loopback (caso típico do mac de dev).
+ *
+ * O refresh token é salvo criptografado via safeStorage do Electron;
+ * em modo tsx cai pra texto plano (uso de dev apenas).
  */
 import * as http from 'http';
 import * as fs from 'fs';
@@ -24,12 +32,14 @@ import type { OAuth2Client } from 'google-auth-library';
 let electronApp: any = null;
 let electronSafeStorage: any = null;
 let electronShell: any = null;
+let electronBrowserWindow: any = null;
 try {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const e = require('electron');
   electronApp = e.app ?? null;
   electronSafeStorage = e.safeStorage ?? null;
   electronShell = e.shell ?? null;
+  electronBrowserWindow = e.BrowserWindow ?? null;
 } catch {
   /* fora do Electron */
 }
@@ -42,6 +52,12 @@ const SCOPES = [
 ];
 
 const CRED_PATH = path.join(__dirname, '../../config/google-credential.json');
+
+// Loopback IP redirect — aceito pelo Google pra Desktop OAuth clients sem
+// precisar registrar nada no Cloud Console. Como interceptamos a navegação
+// no BrowserWindow antes da requisição HTTP sair, o endereço não precisa
+// estar realmente respondendo.
+const ELECTRON_REDIRECT_URI = 'http://127.0.0.1/callback';
 
 interface CredFile {
   installed?: { client_id: string; client_secret: string };
@@ -146,7 +162,8 @@ function apagarTokenSalvo(): void {
  * Retorna um OAuth2Client autenticado.
  * Se já tem refresh token salvo: usa direto (silencioso).
  * Se token foi revogado/expirado/corrompido: limpa o arquivo e refaz o fluxo.
- * Se nunca logou: dispara o fluxo interativo (abre browser).
+ * Se nunca logou: dispara o fluxo interativo (BrowserWindow no Electron, ou
+ * navegador padrão + servidor localhost no modo tsx).
  */
 export async function obterClienteOAuth(): Promise<OAuth2Client> {
   const { clientId, clientSecret } = lerCredenciais();
@@ -172,10 +189,124 @@ export async function obterClienteOAuth(): Promise<OAuth2Client> {
     }
   }
 
-  return await loginInterativo(clientId, clientSecret);
+  if (electronBrowserWindow) {
+    return await loginInterativoEletron(clientId, clientSecret);
+  }
+  return await loginInterativoLocalhost(clientId, clientSecret);
 }
 
-async function loginInterativo(
+/**
+ * Login OAuth dentro de um BrowserWindow embutido do Electron.
+ * Não depende de servidor localhost — intercepta a navegação ao redirect_uri
+ * direto pela API do Electron, então funciona mesmo em PC com proxy/firewall
+ * corporativo bloqueando conexões loopback.
+ */
+async function loginInterativoEletron(
+  clientId: string,
+  clientSecret: string,
+): Promise<OAuth2Client> {
+  return new Promise((resolve, reject) => {
+    const client = new google.auth.OAuth2(clientId, clientSecret, ELECTRON_REDIRECT_URI);
+    const authUrl = client.generateAuthUrl({
+      access_type: 'offline',
+      scope: SCOPES,
+      prompt: 'consent', // garante refresh_token mesmo se já consentiu antes
+    });
+
+    const authWindow = new electronBrowserWindow({
+      width: 520,
+      height: 720,
+      title: 'Login Google — SIAPS Exporter',
+      autoHideMenuBar: true,
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        // Partition isolada — não mistura cookies com o resto do app, e a cada
+        // login interativo começa limpo (evita "logado no Google numa conta
+        // errada" persistindo entre tentativas).
+        partition: 'siaps-google-auth',
+      },
+    });
+
+    let concluido = false;
+
+    const finalizarSucesso = async (code: string) => {
+      if (concluido) return;
+      concluido = true;
+      try {
+        const { tokens } = await client.getToken(code);
+        client.setCredentials(tokens);
+        salvarToken(JSON.stringify(tokens));
+        if (!authWindow.isDestroyed()) authWindow.destroy();
+        console.log('[auth] ✅ Tokens salvos.');
+        resolve(client);
+      } catch (err) {
+        if (!authWindow.isDestroyed()) authWindow.destroy();
+        reject(err);
+      }
+    };
+
+    const finalizarFalha = (err: Error) => {
+      if (concluido) return;
+      concluido = true;
+      if (!authWindow.isDestroyed()) authWindow.destroy();
+      reject(err);
+    };
+
+    const interceptar = (event: { preventDefault: () => void }, url: string): void => {
+      // Só interessa o redirect final pro callback. Tudo que for navegação
+      // interna do Google (escolher conta, consent screen) passa direto.
+      if (!url.startsWith(ELECTRON_REDIRECT_URI)) return;
+
+      event.preventDefault();
+      try {
+        const parsed = new URL(url);
+        const code = parsed.searchParams.get('code');
+        const erro = parsed.searchParams.get('error');
+        if (erro) {
+          finalizarFalha(new Error(`OAuth: ${erro}`));
+          return;
+        }
+        if (!code) {
+          finalizarFalha(new Error('OAuth: callback sem código de autorização'));
+          return;
+        }
+        finalizarSucesso(code);
+      } catch (err) {
+        finalizarFalha(err as Error);
+      }
+    };
+
+    authWindow.webContents.on('will-redirect', interceptar);
+    authWindow.webContents.on('will-navigate', interceptar);
+
+    authWindow.on('closed', () => {
+      if (!concluido) {
+        concluido = true;
+        reject(new Error('Janela de login fechada antes de concluir'));
+      }
+    });
+
+    // Timeout de segurança: 10 minutos pro humano logar
+    const timeoutId = setTimeout(
+      () => finalizarFalha(new Error('Timeout: login OAuth não completado em 10 minutos')),
+      10 * 60 * 1000,
+    );
+    // Limpa o timer quando concluir (sucesso ou falha) pra não vazar handle
+    authWindow.on('closed', () => clearTimeout(timeoutId));
+
+    console.log('[auth] 🌐 Abrindo janela embutida de login Google...');
+    authWindow.loadURL(authUrl);
+  });
+}
+
+/**
+ * Login OAuth via navegador padrão + servidor HTTP local (fluxo legado).
+ * Usado quando o módulo é importado fora do Electron (tsx, scripts de teste).
+ * Não funciona em PC com proxy corporativo bloqueando loopback — por isso o
+ * app de produção usa loginInterativoEletron.
+ */
+async function loginInterativoLocalhost(
   clientId: string,
   clientSecret: string,
 ): Promise<OAuth2Client> {

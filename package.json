@@ -1,6 +1,6 @@
 {
   "name": "siaps-exporter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Automação de download de planilhas do SIAPS pro Google Sheets",
   "main": "out/main/main.js",
   "author": "Lucas Simao",
