@@ -24,6 +24,10 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 let mainWindow: BrowserWindow | null = null;
+// Semáforo pra impedir 2 execuções paralelas. O orquestrador tem estado global
+// (handleAtivo, cancelamentoSolicitado) que quebraria se rodasse concorrente —
+// improvável na UI atual, mas 4 linhas é barato demais pra não defender.
+let scrapeEmAndamento = false;
 
 app.on('second-instance', () => {
   // Alguém tentou abrir uma segunda janela — traz a existente pra frente
@@ -174,7 +178,15 @@ function registrarHandlers() {
 
   ipcMain.handle('scrape:iniciar', async (_evt, opts: ScrapeOptions) => {
     if (!mainWindow) throw new Error('Janela principal não disponível');
-    await executarExportacao(opts, mainWindow);
+    if (scrapeEmAndamento) {
+      throw new Error('Já existe uma exportação em andamento. Aguarde ou cancele antes de iniciar outra.');
+    }
+    scrapeEmAndamento = true;
+    try {
+      await executarExportacao(opts, mainWindow);
+    } finally {
+      scrapeEmAndamento = false;
+    }
   });
 
   ipcMain.handle('scrape:cancelar', () => {

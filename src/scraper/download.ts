@@ -93,7 +93,7 @@ export async function baixarIndicador(
   opts: OpcoesDownload = {},
 ): Promise<string[]> {
   const pastaDestino = opts.pastaDestino ?? DOWNLOAD_DIR_DEFAULT;
-  if (!fs.existsSync(pastaDestino)) fs.mkdirSync(pastaDestino, { recursive: true });
+  garantirDiretorio(pastaDestino);
 
   // Garante que estamos na página da ref (caso o caller ainda não tenha navegado)
   if (!page.url().includes(ref.url)) {
@@ -285,10 +285,68 @@ async function baixarCSV(
     })(),
   ]);
 
-  const ext = path.extname(download.suggestedFilename()) || '.csv';
-  const filePath = path.join(pastaDestino, `indicador-${ref.id}-${label}${ext}`);
-  await download.saveAs(filePath);
+  // Re-garante que a pasta é diretório antes de cada saveAs. Se algo entre
+  // downloads (unlink com path errado, antivírus, etc.) tiver transformado
+  // ela em arquivo, recria; sem isso Playwright falha com ENOTDIR na cópia.
+  garantirDiretorio(pastaDestino);
+
+  // Nome de arquivo seguro: Windows barra `< > : " / \ | ? *`. `label` é
+  // controlado (Jan-25, etc.) mas defendemos por precaução, e `ref.id` é
+  // número. Extensão do suggestedFilename também é sanitizada.
+  const extRaw = path.extname(download.suggestedFilename()) || '.csv';
+  const ext = sanitizarNome(extRaw) || '.csv';
+  const labelSeguro = sanitizarNome(label);
+  const nomeArquivo = `indicador-${ref.id}-${labelSeguro}${ext}`;
+  const filePath = path.join(pastaDestino, nomeArquivo);
+
+  try {
+    await download.saveAs(filePath);
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { syscall?: string };
+    throw new Error(
+      `Falha ao salvar CSV em "${filePath}" (code=${e.code ?? '?'}, syscall=${e.syscall ?? '?'}, path=${e.path ?? '?'}): ${e.message}`,
+    );
+  }
   return filePath;
+}
+
+/**
+ * Substitui chars inválidos em nomes de arquivo do Windows por `_`.
+ * Também trima whitespace e pontos no início/fim (Windows não gosta disso).
+ */
+function sanitizarNome(nome: string): string {
+  // Windows: < > : " / \ | ? *  e control chars 0x00-0x1f
+  // eslint-disable-next-line no-control-regex
+  return nome.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^[.\s]+|[.\s]+$/g, '');
+}
+
+/**
+ * Garante que `dir` é um DIRETÓRIO utilizável:
+ *   - se não existe: cria (com pais)
+ *   - se existe como arquivo: apaga e cria como pasta
+ *   - se existe como pasta: nada a fazer
+ *
+ * Fix pra ENOTDIR quando algo (antivírus, bug de outra versão, unlink
+ * errado) deixou um arquivo sem extensão no lugar da pasta.
+ */
+function garantirDiretorio(dir: string): void {
+  try {
+    const st = fs.statSync(dir, { throwIfNoEntry: false });
+    if (!st) {
+      fs.mkdirSync(dir, { recursive: true });
+      return;
+    }
+    if (st.isDirectory()) return;
+    // Existe mas NÃO é diretório — remove e recria.
+    console.warn(`[scraper] ⚠️  "${dir}" existia como arquivo, apagando e recriando como pasta`);
+    fs.unlinkSync(dir);
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException;
+    throw new Error(
+      `Não consegui preparar a pasta de downloads "${dir}" (code=${e.code ?? '?'}): ${e.message}`,
+    );
+  }
 }
 
 /**
@@ -311,8 +369,12 @@ async function esperar(
 }
 
 async function tirarScreenshotDebug(page: Page, ref: Ref, label: string): Promise<void> {
-  if (!fs.existsSync(DEBUG_DIR)) fs.mkdirSync(DEBUG_DIR, { recursive: true });
-  const arquivo = path.join(DEBUG_DIR, `erro-${ref.id}-${label}-${Date.now()}.png`);
+  try {
+    garantirDiretorio(DEBUG_DIR);
+  } catch {
+    return; // se nem a pasta de debug conseguimos preparar, desiste do screenshot
+  }
+  const arquivo = path.join(DEBUG_DIR, `erro-${ref.id}-${sanitizarNome(label)}-${Date.now()}.png`);
   try {
     await page.screenshot({ path: arquivo, fullPage: true });
     console.error(`[scraper] 📸 Screenshot do erro salvo em: ${arquivo}`);

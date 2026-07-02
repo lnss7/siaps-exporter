@@ -148,6 +148,12 @@ export async function executarExportacao(
     // 3. Loop pelos jobs com retry em caso de sessão expirada
     for (let i = 0; i < jobs.length; i++) {
       if (cancelamentoSolicitado) break;
+      // Se a usuária fechou a janela mid-batch, não faz sentido continuar
+      // executando (o UI já sumiu, não há pra onde mandar progresso).
+      if (mainWindow.isDestroyed()) {
+        console.log('[orq] 🛑 Janela principal destruída — abortando execução.');
+        break;
+      }
 
       const job = jobs[i];
       const ref = refs.find((r) => r.id === job.refId)!;
@@ -155,14 +161,20 @@ export async function executarExportacao(
 
       let jaTentouRelogin = false;
 
+      // Rastreia qual fase estava rodando quando o erro caiu, pra prefixar
+      // a mensagem final. Sem isso o log só diz "ENOTDIR" e a gente não sabe
+      // se foi no baixar, processar ou enviar.
+      let faseAtual: 'baixar' | 'processar' | 'enviar' = 'baixar';
+
       while (true) {
         if (cancelamentoSolicitado) break;
         try {
-          // Fase 1 — baixar
+          // === FASE 1: baixar ===
+          faseAtual = 'baixar';
           job.status = 'baixando';
           enviarProgresso(i);
-          // pastaDestino em userData (writable em prod, fora do asar)
           const pastaDestino = path.join(app.getPath('userData'), 'downloads');
+          console.log(`[orq] 📥 job ${i + 1}/${jobs.length}: ${ref.nome} / ${mes.label} — baixando (pasta=${pastaDestino})`);
           const arquivos = await baixarIndicador(handle.page, ref, [mes], {
             pastaDestino,
             debug: true,
@@ -170,14 +182,18 @@ export async function executarExportacao(
           const csvPath = arquivos[0];
           if (!csvPath) throw new Error('Scraper não retornou caminho do CSV');
 
-          // Fase 2 — processar
+          // === FASE 2: processar ===
+          faseAtual = 'processar';
           job.status = 'processando';
           enviarProgresso(i);
+          console.log(`[orq] 🧹 processando ${csvPath}`);
           const limpo = limparCsv(csvPath);
 
-          // Fase 3 — enviar pro Drive
+          // === FASE 3: enviar ===
+          faseAtual = 'enviar';
           job.status = 'enviando';
           enviarProgresso(i);
+          console.log(`[orq] ☁️  enviando pro Drive`);
           const resultado = await uploadResultado(oauth, {
             setorNome: ref.setorNome,
             refNome: ref.nome,
@@ -185,8 +201,7 @@ export async function executarExportacao(
             dados: { colunas: limpo.colunas, linhas: limpo.linhas },
           });
 
-          // Upload OK — apaga o CSV local. Os dados já estão no Drive,
-          // não há por que manter cópia local acumulando disco.
+          // Upload OK — apaga o CSV local. Os dados já estão no Drive.
           try {
             if (fs.existsSync(csvPath)) fs.unlinkSync(csvPath);
           } catch (err) {
@@ -207,13 +222,30 @@ export async function executarExportacao(
             continue; // tenta o mesmo job de novo
           }
 
-          // Falha definitiva nesse job — marca como erro e segue pro próximo.
-          // Traduz a mensagem técnica em algo legível antes de mandar pra UI;
-          // o log do console mantém o original pra debug.
+          // Falha definitiva — marca como erro, prefixa a mensagem com a fase
+          // que estava rodando, loga todos os campos do ErrnoException pra
+          // diagnóstico (o log fica no arquivo do userData).
           job.status = 'erro';
-          job.erro = mensagemAmigavel(err);
+          const e = err as NodeJS.ErrnoException & { syscall?: string };
+          const msgOriginal = e.message || String(err);
+          // Anexa fase à mensagem original ANTES de traduzir — assim o usuário
+          // vê "no download: ..." ou "ao salvar planilha: ..."
+          const prefixoFase =
+            faseAtual === 'baixar'
+              ? 'no download'
+              : faseAtual === 'processar'
+                ? 'ao processar o arquivo'
+                : 'ao salvar planilha';
+          const erroComFase = new Error(`${prefixoFase}: ${msgOriginal}`);
+          (erroComFase as any).code = e.code;
+          job.erro = mensagemAmigavel(erroComFase);
           enviarProgresso(i);
-          console.error(`[orq] ❌ ${ref.nome} / ${mes.label}:`, (err as Error).message);
+          console.error(
+            `[orq] ❌ ${ref.nome} / ${mes.label} [fase=${faseAtual}]:`,
+            msgOriginal,
+            `| code=${e.code ?? '?'} | syscall=${e.syscall ?? '?'} | path=${e.path ?? '?'} | errno=${e.errno ?? '?'}`,
+          );
+          if (e.stack) console.error(`[orq]    stack:`, e.stack.split('\n').slice(0, 6).join('\n'));
           break;
         }
       }

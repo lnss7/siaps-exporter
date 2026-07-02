@@ -65,6 +65,15 @@ export function mensagemAmigavel(err: unknown): string {
   if (lower.includes('eperm') || lower.includes('eacces')) {
     return 'Sem permissão pra acessar um arquivo. Verifique se o app não está sendo bloqueado por antivírus.';
   }
+  if (lower.includes('enotdir') || lower.includes('not a directory')) {
+    return 'Problema com a pasta de downloads. Reinicie o app; se persistir, verifique se o antivírus está bloqueando.';
+  }
+  if (lower.includes('eisdir') || lower.includes('illegal operation on a directory')) {
+    return 'Conflito com uma pasta local. Reinicie o app e tente de novo.';
+  }
+  if (lower.includes('ebusy') || lower.includes('resource busy')) {
+    return 'Um arquivo está em uso por outro programa. Feche planilhas abertas e tente de novo.';
+  }
 
   // --- Fallback ---
   // Mantém a mensagem original se for curta o suficiente pra UI;
