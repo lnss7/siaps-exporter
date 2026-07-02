@@ -24,7 +24,11 @@ jobs:
         run: npm install
 
       - name: Inject Google credential
-        run: echo '${{ secrets.GOOGLE_CREDENTIAL_JSON }}' > config/google-credential.json
+        env:
+          GOOGLE_CREDENTIAL_JSON: ${{ secrets.GOOGLE_CREDENTIAL_JSON }}
+        run: |
+          printf '%s' "$GOOGLE_CREDENTIAL_JSON" > config/google-credential.json
+          node -e "const c=require('./config/google-credential.json').installed||require('./config/google-credential.json').web; if(!c?.client_id||!c?.client_secret){console.error('❌ credencial mal formada — client_id ou client_secret faltando'); process.exit(1)}; console.log('✅ credencial OK — client_id termina em ...' + c.client_id.slice(-16))"
         shell: bash
 
       - name: Build and publish release
